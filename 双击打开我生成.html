@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>终极短链生成器 + 二维码</title>
+<script src="https://cdn.jsdelivr.net/npm/blueimp-md5/js/md5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string/libs/lz-string.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;}
+body{margin:0;padding:0;background:linear-gradient(135deg,#6c5ce7,#00b894);display:flex;justify-content:center;align-items:center;min-height:100vh;}
+.container{background:#fff;padding:25px 30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.2);max-width:480px;width:95%;}
+h2{text-align:center;color:#333;margin-bottom:20px;font-size:1.5rem;}
+label{font-weight:bold;margin-top:12px;display:block;color:#555;font-size:0.9rem;}
+input,textarea{width:100%;padding:10px 12px;margin-top:6px;border-radius:6px;border:1px solid #ccc;font-size:0.95rem;transition:0.3s;}
+input:focus,textarea:focus{outline:none;border-color:#6c5ce7;box-shadow:0 0 5px rgba(108,92,231,0.4);}
+textarea{resize:none;height:80px;}
+.btn{flex:1;padding:10px 0;margin-top:12px;border:none;border-radius:8px;font-size:0.95rem;cursor:pointer;color:#fff;transition:0.3s;}
+.btn-generate{background:#6c5ce7;margin-right:4%;}
+.btn-copy{background:#00b894;margin-right:4%;}
+.btn-share{background:#fd79a8;}
+.btn:hover{opacity:0.9;}
+.btn-group{display:flex;justify-content:space-between;gap:2%;}
+#qrcode{margin-top:20px;text-align:center;}
+@media (max-width:480px){
+  .btn-group{flex-direction:column;}
+  .btn{margin-right:0;margin-bottom:8px;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>终极短链生成器 + 二维码</h2>
+
+  <label>落地页标题：</label>
+  <input type="text" id="pageTitleInput" placeholder="例如：欢迎访问我的网站">
+
+  <label>目标网址：</label>
+  <input type="text" id="inputUrl" placeholder="例如：https://www.baidu.com">
+
+  <label>入口页面地址：</label>
+  <input type="text" id="pageUrl" placeholder="例如：https://你的域名/page.html">
+
+  <label>过期时间（分钟）：</label>
+  <input type="number" id="expireMinutes" value="5">
+
+  <div class="btn-group">
+    <button class="btn btn-generate" onclick="generateLink()">生成链接</button>
+    <button class="btn btn-copy" onclick="copyLink()">复制链接</button>
+    <button class="btn btn-share" onclick="shareLink()">分享链接</button>
+  </div>
+
+  <label>生成的加密链接：</label>
+  <textarea id="result" readonly placeholder="生成后显示在这里..."></textarea>
+
+  <div id="qrcode"></div>
+</div>
+
+<script>
+const secretKey=13579;
+const secretFactor=123;
+const secretKey2="MySecretSignKey";
+
+function randomSalt(len=6){
+  const chars="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return Array.from({length:len},()=>chars.charAt(Math.floor(Math.random()*chars.length))).join('');
+}
+
+function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64UrlEncode(str){ return utf8ToBase64(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+
+let lastLink="";
+
+function encodePayloadUltra(obj){
+  const shortObj={u:obj.url,t:obj.ts_h,e:obj.exp_h,s:obj.salt,g:obj.sig,h:utf8ToBase64(obj.title)};
+  const jsonStr=JSON.stringify(shortObj);
+  const compressed=LZString.compressToBase64(jsonStr);
+  return base64UrlEncode(compressed);
+}
+
+function generateLink(){
+  const title=document.getElementById('pageTitleInput').value.trim();
+  const inputUrl=document.getElementById('inputUrl').value.trim();
+  const pageUrl=document.getElementById('pageUrl').value.trim();
+  const expireMinutes=parseInt(document.getElementById('expireMinutes').value.trim())||5;
+  if(!title||!inputUrl||!pageUrl){ alert("请填写完整信息！"); return; }
+
+  const ts=Math.floor(Date.now()/1000);
+  const exp=expireMinutes*60;
+  const salt=randomSalt();
+  const ts_h=ts+secretKey;
+  const exp_h=exp*secretFactor;
+  const sig=md5(inputUrl+ts_h+exp_h+salt+secretKey2);
+
+  const payload={url:inputUrl, ts_h, exp_h, salt, sig, title};
+  const sk=encodePayloadUltra(payload);
+
+  lastLink=`${pageUrl}?sk=${encodeURIComponent(sk)}`;
+  document.getElementById('result').value=lastLink;
+
+  // 生成二维码
+  const qrcodeContainer=document.getElementById('qrcode');
+  qrcodeContainer.innerHTML="";
+  QRCode.toCanvas(lastLink, {width:200}, function (error, canvas) {
+    if(error){ console.error(error); return; }
+    qrcodeContainer.appendChild(canvas);
+  });
+}
+
+function copyLink(){
+  if(!lastLink){ alert("请先生成链接！"); return; }
+  navigator.clipboard.writeText(lastLink).then(()=>{ alert("已复制到剪贴板！"); })
+  .catch(()=>{ alert("复制失败，请手动复制！"); });
+}
+
+function shareLink(){
+  if(!lastLink){ alert("请先生成链接！"); return; }
+  if(navigator.share){
+    navigator.share({title:'分享落地页', text:'请点击访问：', url:lastLink})
+    .then(()=>{ console.log("分享成功"); })
+    .catch(()=>{ alert("分享失败"); });
+  } else {
+    copyLink();
+    alert("分享功能不支持，链接已复制到剪贴板，可手动分享。");
+  }
+}
+</script>
+</body>
+</html>

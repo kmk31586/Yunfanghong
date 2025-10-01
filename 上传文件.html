@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>落地页</title>
+<script src="https://cdn.jsdelivr.net/npm/blueimp-md5/js/md5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string/libs/lz-string.min.js"></script>
+<style>
+html,body{height:100%;margin:0;background:#f5f5f5;}
+#targetIframe{width:100%;height:100%;border:none;border-radius:6px;box-shadow:0 0 12px rgba(0,0,0,0.1);}
+</style>
+</head>
+<body>
+<iframe id="targetIframe"></iframe>
+<script>
+const expireRedirect="https://www.baidu.com";
+const secretKey=13579;
+const secretFactor=123;
+const secretKey2="MySecretSignKey";
+
+function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str))); }
+function base64UrlDecode(str){ str=str.replace(/-/g,'+').replace(/_/g,'/'); while(str.length%4) str+='='; return atob(str); }
+
+function customDecode(str){
+  const compressed=base64UrlDecode(str);
+  const jsonStr=LZString.decompressFromBase64(compressed);
+  const obj=JSON.parse(jsonStr);
+  return { url:obj.u, ts_h:obj.t, exp_h:obj.e, salt:obj.s, sig:obj.g, title:base64ToUtf8(obj.h) };
+}
+
+function isValidTimestamp(ts_h, exp_h){
+  const ts=ts_h-secretKey;
+  const exp=exp_h/secretFactor;
+  const now=Math.floor(Date.now()/1000);
+  return (now-ts)<=exp;
+}
+
+const urlParams=new URLSearchParams(window.location.search);
+const sk=urlParams.get('sk');
+
+if(sk){
+  try{
+    const payload=customDecode(sk);
+    const sigCheck=md5(payload.url+payload.ts_h+payload.exp_h+payload.salt+secretKey2);
+    if(!isValidTimestamp(payload.ts_h,payload.exp_h)||sigCheck!==payload.sig){
+      alert("链接无效或已过期，正在跳转...");
+      window.location.href=expireRedirect;
+    } else {
+      document.title=payload.title;
+      document.getElementById('targetIframe').src=payload.url;
+    }
+  }catch(e){
+    console.error(e);
+    alert("系统错误，正在跳转...");
+    window.location.href=expireRedirect;
+  }
+}else{
+  alert("参数无效，正在跳转...");
+  window.location.href=expireRedirect;
+}
+</script>
+</body>
+</html>
